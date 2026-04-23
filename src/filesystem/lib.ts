@@ -149,8 +149,15 @@ export async function validatePath(requestedPath: string): Promise<string> {
           );
         }
         return absolute;
-      } catch {
-        throw formatFilesystemValidationError('path_parent_missing', `Parent directory does not exist: ${parentDir}`);
+      } catch (parentError) {
+        const parentErrorCode = (parentError as NodeJS.ErrnoException).code;
+        if (parentErrorCode === 'EACCES' || parentErrorCode === 'EPERM') {
+          throw formatFilesystemValidationError('path_permission_denied', `Permission denied: ${parentDir}`);
+        }
+        if (parentErrorCode === 'ENOENT') {
+          throw formatFilesystemValidationError('path_parent_missing', `Parent directory does not exist: ${parentDir}`);
+        }
+        throw parentError;
       }
     }
     if ((error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM') {

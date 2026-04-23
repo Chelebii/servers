@@ -205,6 +205,57 @@ describe('Lib Functions', () => {
           .rejects.toThrow('[path_parent_missing] Parent directory does not exist');
       });
 
+      it('rejects with path_permission_denied when file realpath access is denied', async () => {
+        const testPath = process.platform === 'win32' ? 'C:\\Users\\test\\locked.txt' : '/home/user/locked.txt';
+        const eaccesError = new Error('EACCES') as NodeJS.ErrnoException;
+        eaccesError.code = 'EACCES';
+
+        mockFs.realpath.mockRejectedValueOnce(eaccesError);
+
+        await expect(validatePath(testPath))
+          .rejects.toThrow('[path_permission_denied] Permission denied');
+      });
+
+      it('rejects with path_permission_denied when parent directory access is denied', async () => {
+        const newFilePath = process.platform === 'win32' ? 'C:\\Users\\test\\locked\\newfile.txt' : '/home/user/locked/newfile.txt';
+        const enoentError = new Error('ENOENT') as NodeJS.ErrnoException;
+        enoentError.code = 'ENOENT';
+        const epermError = new Error('EPERM') as NodeJS.ErrnoException;
+        epermError.code = 'EPERM';
+
+        mockFs.realpath
+          .mockRejectedValueOnce(enoentError)
+          .mockRejectedValueOnce(epermError);
+
+        await expect(validatePath(newFilePath))
+          .rejects.toThrow('[path_permission_denied] Permission denied');
+      });
+
+      it('rejects invalid paths with a stable path_invalid code', async () => {
+        const resolveSpy = vi.spyOn(path, 'resolve').mockImplementation(() => {
+          throw new TypeError('Invalid path');
+        });
+
+        await expect(validatePath('invalid-path'))
+          .rejects.toThrow('[path_invalid] Invalid path: invalid-path');
+
+        resolveSpy.mockRestore();
+      });
+
+      it('preserves outside-root errors from parent directory validation', async () => {
+        const newFilePath = process.platform === 'win32' ? 'C:\\Users\\test\\nested\\newfile.txt' : '/home/user/nested/newfile.txt';
+        const parentPath = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+        const enoentError = new Error('ENOENT') as NodeJS.ErrnoException;
+        enoentError.code = 'ENOENT';
+
+        mockFs.realpath
+          .mockRejectedValueOnce(enoentError)
+          .mockResolvedValueOnce(parentPath);
+
+        await expect(validatePath(newFilePath))
+          .rejects.toThrow('[path_outside_allowed_roots] Access denied - parent directory outside allowed directories');
+      });
+
       it('resolves relative paths against allowed directories instead of process.cwd()', async () => {
         const relativePath = 'test-file.txt';
         const originalCwd = process.cwd;
